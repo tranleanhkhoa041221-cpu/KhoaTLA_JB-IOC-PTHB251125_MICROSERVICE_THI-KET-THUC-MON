@@ -1,117 +1,197 @@
-- Kiến trúc hệ thống
+# 🛒 Order Management Microservices System
+> Java Spring Boot · Spring Cloud · Kafka · PostgreSQL · Docker
 
-[Client] → [API Gateway] → [Order Service] → (Feign/Kafka) → [Inventory Service]
-↓
-[Eureka Server]
-Eureka Server: Service Registry, quản lý danh bạ các service.
+A microservices-based order management system demonstrating the **dual communication pattern**: synchronous service-to-service calls via **OpenFeign** and asynchronous event-driven stock deduction via **Apache Kafka**.
 
-API Gateway (WebMVC): Định tuyến request /api/orders/** và /api/inventory/** tới service tương ứng.
+---
 
-Order Service: CRUD đơn hàng, xử lý nghiệp vụ đặt hàng.
+## 📋 Table of Contents
+- [Architecture](#-architecture)
+- [Services](#-services)
+- [Tech Stack](#-tech-stack)
+- [Communication Patterns](#-communication-patterns)
+- [Getting Started](#-getting-started)
+- [API Overview](#-api-overview)
 
-Inventory Service: CRUD sản phẩm, quản lý tồn kho.
+---
 
-⚙️ Công nghệ sử dụng
-Java 17+
+## 🏗️ Architecture
 
-Spring Boot 3.x
+```
+                    ┌─────────────────┐
+                    │  Eureka Server  │  :8761 — Service Registry
+                    │  (Netflix OSS)  │
+                    └────────┬────────┘
+                             │ (register & discover)
+              ┌──────────────┼──────────────┐
+              ↓              ↓              ↓
+     ┌────────────────┐  ┌──────────────┐  ┌──────────────────┐
+     │  API Gateway   │  │ Order Service│  │Inventory Service │
+     │   :8080        │  │   :8081      │  │    :8082         │
+     │Spring Cloud GW │  │              │  │                  │
+     └───────┬────────┘  └──────┬───────┘  └──────────────────┘
+             │                  │  [Feign - sync]       ↑
+         [routes]               └──────────────────────→│ stock check
+             ├──→ /api/orders/**   → order-service       │
+             └──→ /api/inventory/**→ inventory-service   │
+                                       │                 │
+                                  [Kafka async]          │
+                                       └─── order-topic ─┘
+                                                ↑
+                                     [Apache Kafka :9092]
+                                       (KRaft mode)
+                                                ↑
+                                     [PostgreSQL :5433]
+                                   order_db | inventory_db
+```
 
-Spring Cloud Netflix Eureka
+---
 
-Spring Cloud Gateway (WebMVC)
+## 🧩 Services
 
-Spring Data JPA + PostgreSQL
+| Service | Port | Description |
+|---|---|---|
+| **eureka-server** | 8761 | Netflix Eureka — Service Registry. All services register here. |
+| **api-gateway** | 8080 | Spring Cloud Gateway (WebMVC). Routes traffic to downstream services using Eureka load-balanced URIs (`lb://`). |
+| **order-service** | 8081 | Handles order creation. Validates stock synchronously via Feign, saves order as `PENDING`, then publishes Kafka event to deduct stock. |
+| **inventory-service** | 8082 | Manages product/inventory data. Exposes REST for stock queries. Consumes Kafka `order-topic` to deduct stock asynchronously with pessimistic locking. |
 
-Spring Kafka
+---
 
-OpenFeign
+## 🛠️ Tech Stack
 
-🚀 Cách chạy hệ thống
-Khởi động Eureka Server
+| Category | Technology |
+|---|---|
+| **Language** | Java 17 |
+| **Framework** | Spring Boot 4.1.0 |
+| **Build Tool** | Gradle (Wrapper) |
+| **Service Registry** | Spring Cloud Netflix Eureka (Spring Cloud 2025.1.2) |
+| **API Gateway** | Spring Cloud Gateway Server WebMVC |
+| **Service Communication (sync)** | Spring Cloud OpenFeign (`@FeignClient`) |
+| **Message Broker (async)** | Apache Kafka 4.1.2 (KRaft mode — no ZooKeeper) |
+| **Database** | PostgreSQL (separate DB per service) |
+| **ORM** | Spring Data JPA + Hibernate |
+| **Containerization** | Docker Compose (Kafka) |
 
-bash
-mvn spring-boot:run -pl eureka-server
-Khởi động API Gateway
+---
 
-bash
-mvn spring-boot:run -pl api-gateway
-Khởi động Inventory Service
+## 🔄 Communication Patterns
 
-bash
-mvn spring-boot:run -pl inventory-service
-Khởi động Order Service
-
-bash
-mvn spring-boot:run -pl order-service
-📌 Yêu cầu: PostgreSQL, Kafka, Zookeeper đang chạy (có thể dùng docker-compose).
-
-🧪 Test API với Postman (qua Gateway)
-1. Tạo product
-   POST /api/inventory
-
-Body:
-
-json
-{ "productName": "Laptop Dell", "quantity": 10, "price": 1500 }
-2. Lấy product
-   GET /api/inventory/1
-
-3. Đặt hàng
-   POST /api/orders?productId=1&quantity=2
-
-👉 Response thành công:
-
-json
-{
-"id": 1,
-"productId": 1,
-"quantity": 2,
-"status": "PENDING",
-"totalPrice": 3000
+### Synchronous — OpenFeign
+```java
+@FeignClient(name = "inventory-service")
+public interface ProductClient {
+    @GetMapping("/api/inventory/{productId}")
+    ProductResponse getProduct(@PathVariable Long productId);
 }
-👉 Response khi hết hàng:
+```
+- Order Service → Inventory Service to validate stock **before** saving order
+- Returns HTTP 409 Conflict if stock is insufficient
 
-json
-{
-"status": 409,
-"error": "Conflict",
-"path": "/api/orders"
-}
+### Asynchronous — Apache Kafka
+```
+Order Service (Producer)  →  "order-topic"  →  Inventory Service (Consumer)
+```
+- After order is saved as `PENDING`, Kafka event fires to deduct stock
+- Consumer uses **pessimistic locking** (`findByIdWithLock`) to prevent race conditions
 
+### Complete Order Flow
+```
+1. POST /api/orders?productId=X&quantity=Y
+2. Order Service → [Feign] → Inventory Service: check stock
+   → 409 if insufficient
+3. Order Service: save Order (status: PENDING) to order_db
+4. Order Service → [Kafka] → "order-topic" → Inventory Service: deduct stock
+5. Inventory Service: UPDATE product SET quantity = quantity - N (pessimistic lock)
+```
 
-- Task 3: Phân tích kiến trúc
-1. Service Discovery
-   Gateway không nên gọi trực tiếp IP/Port của service vì:
+### Why Both Feign AND Kafka?
 
-Service có thể scale nhiều instance, mỗi instance chạy port khác nhau.
+| | OpenFeign (sync) | Kafka (async) |
+|---|---|---|
+| **Purpose** | Immediate stock validation — client gets instant result | Decouple stock deduction — resilient, no blocking |
+| **If service down** | Returns error immediately | Event retained; processed when service recovers |
+| **Client experience** | Knows right away if order is possible | No impact on response time |
 
-IP/Port có thể thay đổi khi deploy lại.
+---
 
-Eureka cung cấp cơ chế Service Discovery: Gateway chỉ cần gọi theo serviceId (vd: lb://order-service), Eureka sẽ tự động phân phối request đến instance phù hợp.
+## 🚀 Getting Started
 
-2. Scale khi số lượng request tăng
-   Khi request tăng đột biến, ta có thể scale Order Service bằng cách chạy thêm nhiều instance.
+### Prerequisites
+- Java 17+
+- PostgreSQL 15+ (running locally on port 5433)
+- Docker & Docker Compose
 
-Gateway không cần thay đổi cấu hình, vì Eureka sẽ tự động cập nhật danh sách instance và Gateway sẽ load balance request.
+### 1. Start Kafka
+```bash
+docker-compose up -d
+# Starts Apache Kafka (KRaft mode) on port 9092
+```
 
-3. So sánh OpenFeign vs Kafka
-   Tiêu chí	OpenFeign (Đồng bộ)	Kafka (Bất đồng bộ)
-   Cách giao tiếp	Gọi trực tiếp REST API qua ServiceID	Gửi event vào topic, consumer xử lý
-   Độ trễ	Thấp, phản hồi ngay cho client	Cao hơn, vì phải qua queue
-   Đảm bảo phản hồi	Client nhận kết quả ngay (vd: hết hàng → trả lỗi 409)	Client chỉ nhận ACK gửi event, kết quả xử lý sau
-   Độ tin cậy	Phụ thuộc vào service đích, nếu down thì lỗi ngay	Kafka lưu event, service down vẫn có thể xử lý khi lên lại
-   Use case phù hợp	Khi cần phản hồi tức thì cho client	Khi cần xử lý bất đồng bộ, mở rộng hệ thống (audit, notification, analytics)
+### 2. Create PostgreSQL Databases
+```sql
+CREATE DATABASE order_db;
+CREATE DATABASE inventory_db;
+```
 
+### 3. Start Services (in order)
+```bash
+# Terminal 1 — Eureka Server (start first)
+cd eureka-server && ./gradlew bootRun
 
- * Trong bài toán này:
+# Terminal 2 — Inventory Service
+cd inventory-service && ./gradlew bootRun
 
-OpenFeign phù hợp để client biết ngay kết quả đặt hàng (có đủ hàng hay không).
+# Terminal 3 — Order Service
+cd order-service && ./gradlew bootRun
 
-Kafka phù hợp để cập nhật tồn kho, gửi thông báo, hoặc tích hợp với hệ thống khác mà không ảnh hưởng đến tốc độ phản hồi cho client.
+# Terminal 4 — API Gateway (start last)
+cd api-gateway && ./gradlew bootRun
+```
 
-* Ưu điểm kiến trúc
-Kết hợp cả Feign và Kafka:
+### Service URLs
+| Service | URL |
+|---|---|
+| Eureka Dashboard | http://localhost:8761 |
+| API Gateway | http://localhost:8080 |
+| Order Service (direct) | http://localhost:8081 |
+| Inventory Service (direct) | http://localhost:8082 |
 
-Feign đảm bảo phản hồi chính xác cho client.
+---
 
-Kafka đảm bảo hệ thống mở rộng, xử lý bất đồng bộ, không mất dữ liệu khi service down.
+## 🌐 API Overview
+
+All requests go through the **API Gateway** at `http://localhost:8080`
+
+### Inventory
+```http
+GET    /api/inventory              # List all products
+GET    /api/inventory/{id}         # Get product by ID
+POST   /api/inventory              # Create product { "productName": "Laptop", "quantity": 10, "price": 1500 }
+PUT    /api/inventory/{id}         # Update product
+```
+
+### Orders
+```http
+POST   /api/orders?productId={id}&quantity={n}  # Place an order
+GET    /api/orders                 # List all orders
+GET    /api/orders/{id}            # Get order by ID
+```
+
+#### Sample Responses
+**Success (200):**
+```json
+{ "id": 1, "productId": 1, "quantity": 2, "status": "PENDING", "totalPrice": 3000 }
+```
+**Out of stock (409):**
+```json
+{ "status": 409, "error": "Conflict", "message": "Insufficient stock" }
+```
+
+---
+
+## 👤 Author
+
+**Trần Lê Anh Khoa** — Backend Developer (Java Spring Boot)  
+📧 tranleanhkhoa041221@gmail.com  
+🔗 [GitHub](https://github.com/tranleanhkhoa041221-cpu)
