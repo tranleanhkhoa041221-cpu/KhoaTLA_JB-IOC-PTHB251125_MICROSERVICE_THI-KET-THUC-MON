@@ -1,9 +1,10 @@
-package ra.orderservice;
+package ra.orderservice.kafka;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+import ra.orderservice.event.OrderEvent;
 import tools.jackson.databind.ObjectMapper;
 
 @Component

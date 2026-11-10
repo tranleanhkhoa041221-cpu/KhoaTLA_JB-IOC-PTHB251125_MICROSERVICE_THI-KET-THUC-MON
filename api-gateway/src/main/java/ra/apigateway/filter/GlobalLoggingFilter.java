@@ -1,4 +1,4 @@
-package ra.apigateway;
+package ra.apigateway.filter;
 
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;

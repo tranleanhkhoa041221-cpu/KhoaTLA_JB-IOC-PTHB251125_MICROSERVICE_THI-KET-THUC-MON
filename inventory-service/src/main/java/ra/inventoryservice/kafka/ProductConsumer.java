@@ -1,10 +1,13 @@
-package ra.inventoryservice;
+package ra.inventoryservice.kafka;
 
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
+import ra.inventoryservice.entity.Product;
+import ra.inventoryservice.event.OrderEvent;
+import ra.inventoryservice.repository.ProductRepository;
 import tools.jackson.databind.ObjectMapper;
 
 @Component

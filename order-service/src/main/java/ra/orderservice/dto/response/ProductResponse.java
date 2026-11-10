@@ -1,4 +1,4 @@
-package ra.orderservice;
+package ra.orderservice.dto.response;
 
 import lombok.Data;
 

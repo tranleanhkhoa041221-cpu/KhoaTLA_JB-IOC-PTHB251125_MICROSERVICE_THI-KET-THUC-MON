@@ -1,4 +1,4 @@
-package ra.orderservice;
+package ra.orderservice.dto.request;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

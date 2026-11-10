@@ -1,4 +1,4 @@
-package ra.inventoryservice;
+package ra.orderservice.event;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

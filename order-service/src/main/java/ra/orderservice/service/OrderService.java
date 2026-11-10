@@ -1,11 +1,16 @@
-package ra.orderservice;
-
+package ra.orderservice.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import ra.orderservice.client.ProductClient;
+import ra.orderservice.dto.request.OrderRequest;
+import ra.orderservice.dto.response.ProductResponse;
+import ra.orderservice.entity.Order;
+import ra.orderservice.kafka.OrderProducer;
+import ra.orderservice.repository.OrderRepository;
 
 @Service
 @RequiredArgsConstructor

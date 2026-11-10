@@ -1,21 +1,21 @@
-package ra.orderservice;
+package ra.inventoryservice.entity;
 
 import jakarta.persistence.*;
 import lombok.Data;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
-@Table(name = "orders")
+@Table(name = "products")
 @Data
-public class Order {
+public class Product {
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
-    private Long productId ;
+    private String productName;
     private Integer quantity;
-    private String status;
-    private BigDecimal totalPrice;
+    private BigDecimal price;
+
+
 }

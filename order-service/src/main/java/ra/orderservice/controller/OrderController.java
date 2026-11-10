@@ -1,8 +1,11 @@
-package ra.orderservice;
+package ra.orderservice.controller;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import ra.orderservice.dto.request.OrderRequest;
+import ra.orderservice.entity.Order;
+import ra.orderservice.service.OrderService;
 
 @RestController
 @RequestMapping("/api/orders")
